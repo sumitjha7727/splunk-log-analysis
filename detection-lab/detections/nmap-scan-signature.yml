@@ -1,0 +1,28 @@
+title: SMTP Nmap Scan Signature (HELO Fingerprint)
+id: cdca8335-2ed7-4902-9d22-380e8ee26734
+status: experimental
+description: >
+  Detects Nmap's SMTP script announcing itself via a scanner-specific
+  HELO string (nmap.scanme.org) instead of a real mail client hostname.
+  Confirmed in Project 5 (Query 5): fired from three separate internal
+  hosts, each touching a different destination once - consistent with
+  a broad network-wide service sweep rather than a targeted mail
+  client.
+references:
+  - https://github.com/sumitjha7727/splunk-log-analysis/tree/main/05-smtp-log-analysis
+author: Sumit Kant Jha
+date: 2026-08-28
+logsource:
+  category: application
+  product: zeek
+  service: smtp
+detection:
+  selection:
+    helo|contains: 'nmap'
+  condition: selection
+falsepositives:
+  - An authorized internal vulnerability-scanning or network-inventory process using Nmap's SMTP script as part of routine scanning
+level: medium
+tags:
+  - attack.reconnaissance
+  - attack.t1046

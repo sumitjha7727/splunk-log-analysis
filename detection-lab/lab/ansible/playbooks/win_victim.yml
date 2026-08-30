@@ -1,0 +1,67 @@
+---
+# Provisions the Windows victim: Sysmon with SwiftOnSecurity's
+# well-known community config, plus a Splunk Universal Forwarder
+# pointed at the lab's docker-compose Splunk indexer.
+#
+# Requires the `ansible.windows` and `community.windows` collections
+# (`ansible-galaxy collection install ansible.windows community.windows`)
+# and a WinRM-reachable host - see ../ansible/inventory.ini's
+# windows_victims group for the connection settings this assumes.
+#
+# Verify download URLs and version numbers below against current
+# upstream sources before running - none of this has been executed
+# against a real host from this environment.
+- name: Provision Windows victim (Sysmon + Splunk Universal Forwarder)
+  hosts: windows_victims
+  vars:
+    splunk_uf_version: "9.2.1"
+    splunk_indexer_host: "192.168.56.1"
+    splunk_receiving_port: 9997
+
+  tasks:
+    - name: Download Sysmon
+      ansible.windows.win_get_url:
+        url: https://download.sysinternals.com/files/Sysmon.zip
+        dest: C:\Windows\Temp\Sysmon.zip
+
+    - name: Unzip Sysmon
+      community.windows.win_unzip:
+        src: C:\Windows\Temp\Sysmon.zip
+        dest: C:\Windows\Temp\Sysmon
+
+    - name: Download SwiftOnSecurity's sysmon-config
+      ansible.windows.win_get_url:
+        url: https://raw.githubusercontent.com/SwiftOnSecurity/sysmon-config/master/sysmonconfig-export.xml
+        dest: C:\Windows\Temp\sysmonconfig.xml
+      # This is a widely-used, actively-maintained community baseline
+      # config, pulled live from GitHub at provision time rather than
+      # vendored into this repo - confirm the URL still resolves
+      # before running, and consider pinning to a specific commit for
+      # a reproducible campaign rather than always tracking master.
+
+    - name: Install Sysmon with the SwiftOnSecurity config
+      ansible.windows.win_command: >
+        C:\Windows\Temp\Sysmon\Sysmon64.exe -accepteula -i C:\Windows\Temp\sysmonconfig.xml
+
+    - name: Download Splunk Universal Forwarder MSI
+      ansible.windows.win_get_url:
+        url: "https://download.splunk.com/products/universalforwarder/releases/{{ splunk_uf_version }}/windows/splunkforwarder-{{ splunk_uf_version }}-x64-release.msi"
+        dest: C:\Windows\Temp\splunkforwarder.msi
+      # Check Splunk's download page for the current UF version/URL.
+
+    - name: Install Splunk UF, forwarding straight to the lab indexer
+      ansible.windows.win_package:
+        path: C:\Windows\Temp\splunkforwarder.msi
+        arguments: >-
+          AGREETOLICENSE=Yes
+          RECEIVING_INDEXER="{{ splunk_indexer_host }}:{{ splunk_receiving_port }}"
+          SPLUNKUSERNAME=admin
+          SPLUNKPASSWORD="{{ splunk_uf_admin_password | mandatory }}"
+          LAUNCHSPLUNK=1
+        state: present
+
+    - name: Configure Splunk UF to monitor the Sysmon operational event log
+      ansible.windows.win_command: >
+        "C:\Program Files\SplunkUniversalForwarder\bin\splunk.exe" add monitor
+        "XmlWinEventLog:Microsoft-Windows-Sysmon/Operational"
+        -auth admin:{{ splunk_uf_admin_password }}

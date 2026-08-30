@@ -1,0 +1,28 @@
+title: SMTP Nessus Scan Signature (HELO Fingerprint)
+id: 7889cc7c-6a69-4060-b3f9-6a42500116b1
+status: experimental
+description: >
+  Detects Nessus's vulnerability-scanner fingerprint HELO strings
+  (mail.nessus.org or bare nessus) instead of a real mail client
+  hostname. Confirmed in Project 5 (Query 5): unlike the Nmap sweep
+  pattern, this came from a single source (192.168.202.110) hitting a
+  smaller set of hosts repeatedly - a concentrated vulnerability-scan
+  pattern rather than a one-shot network sweep.
+references:
+  - https://github.com/sumitjha7727/splunk-log-analysis/tree/main/05-smtp-log-analysis
+author: Sumit Kant Jha
+date: 2026-08-28
+logsource:
+  category: application
+  product: zeek
+  service: smtp
+detection:
+  selection:
+    helo|contains: 'nessus'
+  condition: selection
+falsepositives:
+  - An authorized internal vulnerability-management scan (e.g. a scheduled Nessus/Tenable scan against the mail server) using its default HELO string
+level: medium
+tags:
+  - attack.reconnaissance
+  - attack.t1595

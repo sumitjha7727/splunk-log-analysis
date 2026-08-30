@@ -1,0 +1,19 @@
+# Raw sample logs — large, and publicly available at secrepo.com/maccdc2012/
+# (linked from each project's README instead of committed here)
+*.log
+*.log.gz
+*.log.tar.gz
+*.tar
+*.tar.gz
+*.zip
+
+# Installers / large binaries that don't belong in a git repo
+*.exe
+*.msi
+
+# OS / editor junk
+.DS_Store
+Thumbs.db
+*.tmp
+*.swp
+.vscode/

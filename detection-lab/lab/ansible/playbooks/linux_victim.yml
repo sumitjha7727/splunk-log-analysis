@@ -1,0 +1,78 @@
+---
+# Provisions the Linux victim: Zeek (for network-level visibility, the
+# same log family Projects 1-6 hunted through, but generated live here
+# instead of replayed from a static capture) plus a Splunk Universal
+# Forwarder pointed at the lab's docker-compose Splunk indexer.
+#
+# Verify package repo URLs, download URLs, and version numbers below
+# against current upstream docs before running - none of this has been
+# executed against a real host from this environment, and package
+# repos / release URLs shift over time.
+- name: Provision Linux victim (Zeek + Splunk Universal Forwarder)
+  hosts: linux_victims
+  become: true
+  vars:
+    splunk_uf_version: "9.2.1"
+    # IP of whatever host is running ../docker-compose.yml's Splunk
+    # container - defaults to VirtualBox's usual host-only gateway
+    # address, but confirm this against your actual setup.
+    splunk_indexer_host: "192.168.56.1"
+    splunk_receiving_port: 9997
+
+  tasks:
+    - name: Add Zeek's official APT repo (Debian/Ubuntu, via openSUSE Build Service)
+      ansible.builtin.apt_repository:
+        repo: "deb http://download.opensuse.org/repositories/security:/zeek/xUbuntu_22.04/ /"
+        state: present
+      # Check https://zeek.org/get-zeek/ for the current repo path and
+      # matching Ubuntu release before running.
+
+    - name: Install zeek
+      ansible.builtin.apt:
+        name: zeek
+        state: present
+        update_cache: true
+
+    - name: Ensure Zeek is enabled and running
+      ansible.builtin.command: /opt/zeek/bin/zeekctl deploy
+      changed_when: true
+
+    - name: Download Splunk Universal Forwarder
+      ansible.builtin.get_url:
+        url: "https://download.splunk.com/products/universalforwarder/releases/{{ splunk_uf_version }}/linux/splunkforwarder-{{ splunk_uf_version }}-linux-amd64.tgz"
+        dest: /tmp/splunkforwarder.tgz
+      # Check Splunk's download page for the current UF version/URL.
+
+    - name: Extract Splunk UF to /opt
+      ansible.builtin.unarchive:
+        src: /tmp/splunkforwarder.tgz
+        dest: /opt
+        remote_src: true
+
+    - name: Set a real admin password for the UF (do not ship changeme)
+      ansible.builtin.copy:
+        dest: /opt/splunkforwarder/etc/system/local/user-seed.conf
+        content: |
+          [user_info]
+          USERNAME = admin
+          PASSWORD = {{ splunk_uf_admin_password | mandatory }}
+        mode: "0600"
+
+    - name: Configure Splunk UF to forward to the lab indexer
+      ansible.builtin.command: >
+        /opt/splunkforwarder/bin/splunk add forward-server
+        {{ splunk_indexer_host }}:{{ splunk_receiving_port }}
+        -auth admin:{{ splunk_uf_admin_password }}
+      changed_when: true
+
+    - name: Configure Splunk UF to monitor Zeek's current log directory
+      ansible.builtin.command: >
+        /opt/splunkforwarder/bin/splunk add monitor /opt/zeek/logs/current
+        -auth admin:{{ splunk_uf_admin_password }}
+      changed_when: true
+
+    - name: Start Splunk UF and enable boot-start
+      ansible.builtin.command: >
+        /opt/splunkforwarder/bin/splunk enable boot-start
+        --accept-license --answer-yes --no-prompt
+      changed_when: true

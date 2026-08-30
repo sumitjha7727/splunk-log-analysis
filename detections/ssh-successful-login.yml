@@ -1,0 +1,27 @@
+title: SSH Successful Login
+id: 51eadaf4-70f2-44ca-9f2b-73b772f5af52
+status: experimental
+description: >
+  Detects a successful SSH authentication. Not suspicious on its own -
+  this rule exists as a building block for the SSH Brute Force Then
+  Success correlation rule, which only matters when this fires for the
+  same src_ip/dest_ip pair that also triggered the failed-login
+  threshold rule.
+references:
+  - https://github.com/sumitjha7727/splunk-log-analysis/tree/main/04-ssh-log-analysis
+author: Sumit Kant Jha
+date: 2026-08-28
+logsource:
+  category: application
+  product: zeek
+  service: ssh
+detection:
+  selection:
+    status: success
+  condition: selection
+falsepositives:
+  - Any legitimate successful SSH login - intentionally broad, this rule is only meaningful in combination with the correlation rule
+level: low
+tags:
+  - attack.initial_access
+  - attack.t1078
