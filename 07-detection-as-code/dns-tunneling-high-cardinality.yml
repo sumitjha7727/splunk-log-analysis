@@ -1,0 +1,48 @@
+title: DNS Tunneling via High-Cardinality Subdomains
+id: c26f238c-01b7-49f5-ac6c-a65b4bd3f0bd
+status: experimental
+description: >
+  Flags a source host issuing an unusually large number of distinct,
+  long subdomain labels against a single parent domain within a short
+  window - the network-level signature of DNS tunneling, where each
+  query encodes a chunk of payload into a unique subdomain rather than
+  repeating a small, cacheable set of human-readable names. Thresholded
+  on the unique-subdomain ratio per parent domain (native Sigma
+  aggregation below), combined at the SPL-translation layer with a
+  mean-subdomain-length check - the same "documented as the conceptual
+  detection, hand-translated to SPL" pattern this repo already uses for
+  the SSH brute-force correlation rule, because a single native Sigma
+  aggregation condition can't cleanly express two independent
+  thresholds at once. Raw domain length alone (Project 1's original
+  ad-hoc query) is deliberately not used as the sole signal, since it
+  over-fires on legitimate long-but-ordinary subdomains from CDN edge
+  nodes and reputation/AV lookup services. Traces back to Project 1's
+  investigative lead - repeated long, base32/base64-looking subdomains
+  from a single host, 192.168.204.71, to a single domain,
+  auth.rssfeeds.com - formally worked through in the linked
+  investigation below. Not yet promoted to a scheduled Splunk alert:
+  see that investigation for the pending query results this detection's
+  thresholds are meant to be validated against.
+references:
+  - https://github.com/sumitjha7727/splunk-log-analysis/tree/main/01-dns-log-analysis/investigation
+author: Sumit Kant Jha
+date: 2026-08-30
+logsource:
+  category: application
+  product: zeek
+  service: dns
+detection:
+  selection:
+    qtype_name: A
+  timeframe: 1h
+  condition: selection | count(distinct(query)) by src_ip, parent_domain > 15
+falsepositives:
+  - Reputation/AV lookup services generating high subdomain churn against a single parent domain (e.g. McAfee GTI, Sophos XL, Spamhaus, SORBS)
+  - Per-object CDN hostnames, where each cached asset or edge node gets its own long, varied subdomain under one parent domain
+  - A legitimate dynamic-DNS or IoT device-provisioning service that issues unique per-device subdomains under one parent domain
+level: medium
+tags:
+  - attack.exfiltration
+  - attack.command_and_control
+  - attack.t1071.004
+  - attack.t1048.003

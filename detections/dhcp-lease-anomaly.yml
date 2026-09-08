@@ -1,0 +1,34 @@
+title: DHCP Lease Pool Dominated by a Single Host
+id: 3554d043-aa9d-41e9-97fc-ac4639beedfb
+status: experimental
+description: >
+  Flags a single MAC address accounting for an outsized share of DHCP
+  lease activity - the signature of a boot-looping or misconfigured
+  device repeatedly re-confirming the same lease, rather than a mapped
+  attacker technique. Deliberately left without an ATT&CK tag: forcing
+  a technique ID onto an operational anomaly would misrepresent what
+  this actually detects. Threshold note: Project 7 documented a severe
+  Splunk line-breaking bug that undercounts DHCP events (the true top
+  host issued 744 of 1,502 real records, but Splunk's own indexed view
+  only ever showed 41 for its visible top host). Since this detection
+  queries that same buggy indexed data, the threshold below (>20) is
+  calibrated against what Splunk can actually see, not the true count
+  - a real deployment would fix the ingestion line-breaking issue
+  before trusting any count-based threshold on this sourcetype.
+references:
+  - https://github.com/sumitjha7727/splunk-log-analysis/tree/main/07-dhcp-log-analysis
+author: Sumit Kant Jha
+date: 2026-08-28
+logsource:
+  category: application
+  product: zeek
+  service: dhcp
+detection:
+  selection:
+    mac|exists: true
+  timeframe: 24h
+  condition: selection | count() by mac > 20
+falsepositives:
+  - A DHCP relay or gateway device that legitimately renews leases on behalf of many downstream clients
+  - A single busy access point or NAT device generating high normal lease-renewal volume
+level: informational

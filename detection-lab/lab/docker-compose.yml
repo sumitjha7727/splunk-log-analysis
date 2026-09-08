@@ -1,0 +1,36 @@
+# docker-compose.yml — the lab's Splunk indexer/search head. The two
+# victim VMs' Universal Forwarders (see ../ansible/playbooks/) point at
+# this container's receiving port (9997). Bind-mounts ../splunk-app so
+# the detection-lab copy of the app (see its own README for how it
+# differs from the repo-root copy) is loaded automatically on start,
+# rather than needing to be installed by hand through the GUI.
+#
+# Requires a .env file next to this one (not committed - see
+# .env.example) setting SPLUNK_PASSWORD to a real password, not the
+# placeholder default Splunk ships with.
+
+services:
+  splunk:
+    image: splunk/splunk:latest
+    container_name: detection-lab-splunk
+    hostname: detection-lab-splunk
+    environment:
+      - SPLUNK_START_ARGS=--accept-license
+      - SPLUNK_GENERAL_TERMS=--accept-sgt-current-at-splunk-com
+      - SPLUNK_PASSWORD=${SPLUNK_PASSWORD:?Set SPLUNK_PASSWORD in a .env file before starting - see .env.example}
+    ports:
+      - "8000:8000"   # Splunk Web
+      - "8088:8088"   # HTTP Event Collector (not used by this lab's UF-based forwarding, exposed for future use)
+      - "8089:8089"   # Management port
+      - "9997:9997"   # Forwarder receiving port - victims' Splunk UFs point here
+    volumes:
+      - splunk-var:/opt/splunk/var
+      - ../splunk-app:/opt/splunk/etc/apps/detection_lab:ro
+    healthcheck:
+      test: ["CMD", "curl", "-sk", "https://localhost:8089/services/server/info"]
+      interval: 30s
+      timeout: 10s
+      retries: 10
+
+volumes:
+  splunk-var:

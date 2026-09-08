@@ -1,0 +1,132 @@
+# atomics.yml — maps each ported Sigma rule to candidate Atomic Red
+# Team tests for the technique(s) it claims to detect.
+#
+# IMPORTANT: the `id` values below are technique-indexed placeholders
+# in Atomic Red Team's own naming convention (e.g. "T1110-1" for the
+# first published test under T1110), not verified GUIDs pulled from a
+# live check of the current atomics library. That library changes over
+# time - before pointing run_campaign.py at a real lab, check each
+# technique's current test list and exact GUID at:
+#   https://github.com/redcanaryco/atomic-red-team/blob/master/atomics/<technique>/<technique>.md
+# Nothing in this file has been run or verified from this environment.
+#
+# "Six Sigma rules" per this project's scope note refers to the six
+# detections (rows) in 07-detection-as-code/README.md's table - the
+# SSH detection is itself three correlated files, so this maps all
+# eight ported .yml files, not six. Porting fewer would break the
+# correlation rule's dependency on its two component rules.
+
+detections:
+  - rule: ../detections/ssh-failed-login-threshold.yml
+    technique: T1110
+    tactic: credential_access
+    atomic_tests:
+      - id: T1110-1
+        name: Brute Force test - verify current test list/GUID against atomics/T1110/T1110.md
+        platform: linux
+        target_host: linux-victim
+        notes: >
+          Needs an SSH server enabled on linux-victim and a throwaway
+          account to brute-force against - do not point this at any
+          account that matters, even inside the isolated lab.
+
+  - rule: ../detections/ssh-successful-login.yml
+    technique: T1078
+    tactic: initial_access
+    atomic_tests:
+      - note: >
+          T1078 (Valid Accounts) has no single canonical "brute-force
+          then log in" atomic test of its own - this rule is exercised
+          indirectly by the T1110 campaign above (a real successful
+          login following the brute-force run against the throwaway
+          account), not by a standalone atomic. Record the successful
+          login timestamp from that same campaign run rather than
+          scheduling a separate test for this rule.
+
+  - rule: ../detections/ssh-bruteforce-then-success.yml
+    technique: T1110+T1078 (correlation)
+    tactic: credential_access
+    atomic_tests:
+      - note: >
+          Correlation rule - exercised by the same T1110 campaign above
+          (failures followed by a success against the same src/dest
+          pair within the 1h window). No separate atomic test; this
+          row exists so docs/coverage.md has an explicit line for it.
+
+  - rule: ../detections/nmap-scan-signature.yml
+    technique: T1046
+    tactic: discovery
+    atomic_tests:
+      - id: T1046-1
+        name: Network service scanning via Nmap - verify current test list/GUID against atomics/T1046/T1046.md
+        platform: linux
+        target_host: attacker
+        notes: >
+          Run from the attacker VM against linux-victim's SMTP port -
+          confirm the nmap SMTP script actually fires the same HELO
+          fingerprint the Sigma rule looks for (nmap.scanme.org)
+          against whatever mail service linux-victim is running,
+          since this rule was built against a specific historical
+          capture's exact string, not a generic Nmap signature.
+
+  - rule: ../detections/nessus-scan-signature.yml
+    technique: T1595
+    tactic: reconnaissance
+    atomic_tests:
+      - note: >
+          No standard Atomic Red Team test wraps a full Nessus scan
+          (Nessus itself is commercial tooling, not something Atomic
+          ships a canned test for). If a Nessus/OpenVAS instance is
+          available in the lab, run an authenticated or unauthenticated
+          scan against linux-victim's mail service by hand and record
+          it as a manual campaign entry in run_campaign.py's manifest
+          rather than leaving this row untested indefinitely.
+        platform: linux
+        target_host: linux-victim
+
+  - rule: ../detections/smtp-injection-probe.yml
+    technique: T1190
+    tactic: initial_access
+    atomic_tests:
+      - note: >
+          No canonical Atomic Red Team test for this specific
+          probe shape (shell metacharacters in SMTP envelope fields) -
+          this is closer to a manual web/app-layer test than a
+          host-level atomic. Script a small manual SMTP session
+          (e.g. via `swaks` or a raw socket script) that sends the
+          same RCPT TO/MAIL FROM payload documented in
+          05-smtp-log-analysis/README.md, and record it as a manual
+          campaign entry.
+        platform: linux
+        target_host: linux-victim
+
+  - rule: ../detections/dhcp-lease-anomaly.yml
+    technique: null
+    tactic: null
+    atomic_tests:
+      - note: >
+          Deliberately untagged in the Sigma rule itself (see its own
+          description) - this isn't a mapped adversary technique, it's
+          an operational anomaly (a boot-looping or misconfigured
+          host). No Atomic Red Team test applies. To generate a
+          realistic fixture, script a throwaway VM or container that
+          repeatedly issues DHCPREQUEST/renewal against the lab's DHCP
+          server well past the >20-lease threshold, and record that as
+          a manual campaign entry - not an "attack," just a controlled
+          repro of the anomaly shape.
+
+  - rule: ../detections/dns-tunneling-high-cardinality.yml
+    technique: T1071.004+T1048.003
+    tactic: command_and_control
+    atomic_tests:
+      - id: T1071.004-1
+        name: DNS-based C2/tunneling test - verify current test list/GUID against atomics/T1071.004/T1071.004.md
+        platform: linux
+        target_host: linux-victim
+        notes: >
+          Confirm the specific atomic test actually generates
+          high-cardinality subdomains (not just any DNS query) before
+          relying on it to validate this rule's thresholds - the
+          Sigma rule's whole point is distinguishing tunneling-shaped
+          traffic from a single odd-looking query, so a test that only
+          fires one request won't meaningfully exercise it.

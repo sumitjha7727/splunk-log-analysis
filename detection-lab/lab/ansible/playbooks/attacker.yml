@@ -1,0 +1,47 @@
+---
+# Provisions the attacker host with Atomic Red Team's own execution
+# tooling. This playbook only sets up the tooling - it does not run
+# any attack technique. Actually running tests happens later, via
+# ../../attacks/run_campaign.py or Invoke-AtomicRedTeam directly, and
+# only inside the isolated network described in ../../README.md.
+- name: Provision attacker host (Atomic Red Team tooling)
+  hosts: attackers
+  become: true
+  vars:
+    # Pin to a specific commit/tag before a real campaign, rather than
+    # always cloning the latest atomics - the test catalog changes
+    # over time and a real measurement needs a reproducible, recorded
+    # version of the tests it ran, not a moving target.
+    atomic_red_team_ref: "master"
+
+  tasks:
+    - name: Install prerequisites
+      ansible.builtin.apt:
+        name:
+          - git
+          - python3
+          - python3-pip
+          - powershell
+        state: present
+        update_cache: true
+      # `powershell` (PowerShell Core) is needed to run Invoke-AtomicRedTeam,
+      # which is itself a PowerShell module even for Linux/macOS-targeted
+      # atomics - install per Microsoft's current docs if this package
+      # name has changed in your distro's repos.
+
+    - name: Clone Atomic Red Team's atomics library
+      ansible.builtin.git:
+        repo: https://github.com/redcanaryco/atomic-red-team.git
+        dest: /opt/atomic-red-team
+        version: "{{ atomic_red_team_ref }}"
+        depth: 1
+
+    - name: Clone Invoke-AtomicRedTeam (the PowerShell execution framework)
+      ansible.builtin.git:
+        repo: https://github.com/redcanaryco/invoke-atomicredteam.git
+        dest: /opt/invoke-atomicredteam
+        depth: 1
+      # See that repo's own README for installing it as a PowerShell
+      # module (Import-Module) before attempting to invoke any test -
+      # not scripted here since it's an interactive PowerShell setup
+      # step best followed directly from upstream's own instructions.

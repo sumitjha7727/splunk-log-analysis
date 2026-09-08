@@ -1,0 +1,68 @@
+# Vagrantfile — detection-lab's three-host isolated network.
+#
+# Provider assumed: VirtualBox (Vagrant's default). Terraform was the
+# other option B1 named for this - Vagrant was chosen here because this
+# lab is meant to run on a private, host-only network on hardware you
+# control (see the isolation warning in ../README.md), which is exactly
+# Vagrant's home turf; Terraform would make more sense for a
+# cloud-hosted variant of this same lab, which is a reasonable future
+# swap but not what's built here.
+#
+# Box names below are real, commonly-used community/official boxes as
+# of this writing, not guaranteed to still exist or be current by the
+# time you run this - check https://portal.cloud.hashicorp.com/vagrant/discover
+# for the current box name/version before `vagrant up`.
+#
+# SAFETY: every VM here only gets a private_network (host-only) adapter,
+# deliberately never a public/bridged one. Do not add a bridged adapter
+# to reach the internet from inside the lab without thinking through
+# what that means once Atomic Red Team starts running - see the
+# isolation warning in ../README.md before changing this.
+
+Vagrant.configure("2") do |config|
+  config.vm.define "linux-victim" do |victim|
+    victim.vm.box = "ubuntu/jammy64"
+    victim.vm.hostname = "linux-victim"
+    victim.vm.network "private_network", ip: "192.168.56.11"
+    victim.vm.provider "virtualbox" do |vb|
+      vb.memory = "2048"
+      vb.cpus = 2
+    end
+    victim.vm.provision "ansible" do |ansible|
+      ansible.playbook = "ansible/playbooks/linux_victim.yml"
+      ansible.inventory_path = "ansible/inventory.ini"
+      ansible.limit = "linux_victims"
+    end
+  end
+
+  config.vm.define "win-victim" do |victim|
+    victim.vm.box = "gusztavvargadr/windows-10"
+    victim.vm.hostname = "win-victim"
+    victim.vm.network "private_network", ip: "192.168.56.12"
+    victim.vm.communicator = "winrm"
+    victim.vm.provider "virtualbox" do |vb|
+      vb.memory = "4096"
+      vb.cpus = 2
+    end
+    victim.vm.provision "ansible" do |ansible|
+      ansible.playbook = "ansible/playbooks/win_victim.yml"
+      ansible.inventory_path = "ansible/inventory.ini"
+      ansible.limit = "windows_victims"
+    end
+  end
+
+  config.vm.define "attacker" do |attacker|
+    attacker.vm.box = "kalilinux/rolling"
+    attacker.vm.hostname = "attacker"
+    attacker.vm.network "private_network", ip: "192.168.56.13"
+    attacker.vm.provider "virtualbox" do |vb|
+      vb.memory = "2048"
+      vb.cpus = 2
+    end
+    attacker.vm.provision "ansible" do |ansible|
+      ansible.playbook = "ansible/playbooks/attacker.yml"
+      ansible.inventory_path = "ansible/inventory.ini"
+      ansible.limit = "attackers"
+    end
+  end
+end
