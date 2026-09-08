@@ -11,10 +11,20 @@
 # Nothing in this file has been run or verified from this environment.
 #
 # "Six Sigma rules" per this project's scope note refers to the six
-# detections (rows) in 07-detection-as-code/README.md's table - the
-# SSH detection is itself three correlated files, so this maps all
-# eight ported .yml files, not six. Porting fewer would break the
-# correlation rule's dependency on its two component rules.
+# detections (rows) in 07-detection-as-code/README.md's table, ported
+# as eleven .yml files under detections/ - not a 1:1 mapping, because
+# three of those detections (SSH brute force, DHCP lease anomaly, DNS
+# tunneling) each split into a base single-event rule plus a
+# `correlation:` rule over it (the SSH detection spans four files:
+# a failed-login base rule, an event_count threshold correlation over
+# it, the pre-existing ssh-successful-login.yml, and a
+# temporal_ordered rule chaining the threshold correlation to that
+# success). This file only has an entry per *detection*, not per file:
+# a base rule (ssh-failed-login.yml, dhcp-lease-event.yml,
+# dns-query-event.yml) has no atomic_tests entry of its own, since
+# whatever attack exercises its correlation counterpart also generates
+# the base rule's matching events - a separate campaign entry would be
+# redundant, not additional coverage.
 
 detections:
   - rule: ../detections/ssh-failed-login-threshold.yml

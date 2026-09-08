@@ -1,0 +1,31 @@
+title: SSH Failed Login
+id: 552fdfca-742d-4b1f-8054-dca173af8a00
+status: experimental
+description: >
+  Detects a single failed SSH authentication event. Not suspicious on
+  its own - deliberately broad, since this rule exists only as the
+  base event for ssh-failed-login-threshold.yml's correlation (which
+  applies the actual >5-per-hour-per-pair threshold). Split out as its
+  own file when ssh-failed-login-threshold.yml was converted from a
+  deprecated pipe-aggregation condition (`selection | count() by ... >
+  N`, no longer supported by pySigma) to a proper Sigma `event_count`
+  correlation rule, which requires a separate base rule to correlate
+  against rather than expressing the count inline.
+references:
+  - https://github.com/sumitjha7727/splunk-log-analysis/tree/main/03-ssh-log-analysis
+author: Sumit Kant Jha
+date: 2026-08-30
+logsource:
+  category: application
+  product: zeek
+  service: ssh
+detection:
+  selection:
+    status: failure
+  condition: selection
+falsepositives:
+  - Any single legitimate failed SSH login attempt - intentionally broad, only meaningful in combination with ssh-failed-login-threshold.yml's correlation
+level: low
+tags:
+  - attack.credential_access
+  - attack.t1110

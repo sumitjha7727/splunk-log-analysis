@@ -1,0 +1,27 @@
+title: DNS A-Record Query Event
+id: 9bd8115c-df60-4893-99b1-5ec6fd00bdb4
+status: experimental
+description: >
+  Detects a single DNS A-record query event. Not suspicious on its own
+  - deliberately broad, since this rule exists only as the base event
+  for dns-tunneling-high-cardinality.yml's correlation (which applies
+  the actual unique-subdomain-count threshold). Split out as its own
+  file when dns-tunneling-high-cardinality.yml was converted from a
+  deprecated pipe-aggregation-style condition to a proper Sigma
+  `value_count` correlation rule, which requires a separate base rule
+  to correlate against rather than expressing the aggregation inline.
+references:
+  - https://github.com/sumitjha7727/splunk-log-analysis/tree/main/01-dns-log-analysis/investigation
+author: Sumit Kant Jha
+date: 2026-08-30
+logsource:
+  category: application
+  product: zeek
+  service: dns
+detection:
+  selection:
+    qtype_name: A
+  condition: selection
+falsepositives:
+  - Any single legitimate DNS A-record query - intentionally broad, only meaningful in combination with dns-tunneling-high-cardinality.yml's correlation
+level: informational

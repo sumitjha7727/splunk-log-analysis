@@ -9,19 +9,22 @@ event."
 
 FIDELITY LIMITATION, stated plainly (see detection-lab/README.md's CI
 section for the same note): this matcher only evaluates a rule's
-single-event `selection` criteria. It does NOT evaluate:
-  - aggregation conditions (count(), dc(), avg(), a comparison against
-    a `timeframe` window) - e.g. ssh-failed-login-threshold.yml,
-    dhcp-lease-anomaly.yml, dns-tunneling-high-cardinality.yml
-  - correlation rules (a `correlation:` block instead of `detection:`)
-    - e.g. ssh-bruteforce-then-success.yml, which has no `detection:`
-      block for this matcher to evaluate at all
-A "pass" against one of those rules only confirms the per-event
-selection criteria matched, not the full grouped/windowed condition a
-real Splunk alert would evaluate. Real coverage on those rules needs
-either a real Splunk instance in CI (out of scope per B2) or a
-purpose-built aggregation simulator - this lightweight matcher is
-neither.
+single-event `selection` criteria, via its plain `detection:` block.
+It does NOT evaluate `correlation:`-type rules at all - there are four
+in detections/ as of this writing (ssh-failed-login-threshold.yml,
+dhcp-lease-anomaly.yml, and dns-tunneling-high-cardinality.yml, all
+`type: event_count`/`value_count`; ssh-bruteforce-then-success.yml,
+`type: temporal_ordered`), each of which has no `detection:` block for
+this matcher to evaluate. Each of those four correlation rules has a
+broad companion base rule instead (ssh-failed-login.yml,
+dhcp-lease-event.yml, dns-query-event.yml, plus ssh-successful-login.yml
+which the temporal_ordered rule also references) - this matcher CAN
+evaluate those base rules' single-event selection, but that only
+confirms an individual event matches the base pattern, not that it
+would satisfy the correlation's count/window/ordering threshold. Real
+coverage on the correlation rules themselves needs either a real
+Splunk instance in CI (out of scope per B2) or a purpose-built
+correlation simulator - this lightweight matcher is neither.
 
 Fixtures are intentionally empty as of this scaffold (see
 fixtures/README.md) - this suite is written to report that plainly via
@@ -40,18 +43,15 @@ DETECTIONS_DIR = pathlib.Path(__file__).parent.parent / "detections"
 FIXTURES_DIR = pathlib.Path(__file__).parent / "fixtures"
 
 # Rules with no evaluable `detection.selection` block for this
-# lightweight matcher (correlation rules) - listed explicitly rather
-# than inferred, so a new rule added later doesn't silently fall into
+# lightweight matcher - every rule that's a `correlation:` block
+# instead of a `detection:` block. Listed explicitly rather than
+# inferred, so a new rule added later doesn't silently fall into
 # partial evaluation without a reviewer noticing.
-CORRELATION_RULES = {"ssh-bruteforce-then-success.yml"}
-
-# Rules whose `condition` involves aggregation (count/dc/avg plus a
-# comparison, scoped by a `timeframe`) - this matcher checks their
-# `selection` block only, not the aggregation threshold itself.
-AGGREGATION_RULES = {
-    "ssh-failed-login-threshold.yml",
-    "dhcp-lease-anomaly.yml",
-    "dns-tunneling-high-cardinality.yml",
+CORRELATION_RULES = {
+    "ssh-failed-login-threshold.yml",  # type: event_count
+    "dhcp-lease-anomaly.yml",  # type: event_count
+    "dns-tunneling-high-cardinality.yml",  # type: value_count
+    "ssh-bruteforce-then-success.yml",  # type: temporal_ordered
 }
 
 
@@ -174,22 +174,6 @@ def test_fixture_matches_expected_outcome(fixture_path: pathlib.Path):
 
     rule = load_rule(rule_path)
     matched = evaluate_rule(rule, fixture["event"])
-
-    if rule_name in AGGREGATION_RULES:
-        # We can only confirm the per-event selection criteria matched,
-        # not the full aggregation threshold - report as an explicit
-        # partial check rather than a full pass/fail.
-        assert matched, (
-            f"{fixture_path.name}: event doesn't even match {rule_name}'s "
-            f"per-event selection - the full aggregation condition was "
-            f"never going to be checkable by this matcher, but the "
-            f"selection-level mismatch is still a real finding."
-        )
-        pytest.skip(
-            f"{rule_name}: selection-level match confirmed, but this is an "
-            f"aggregation rule - the count/avg threshold itself isn't "
-            f"evaluated by this lightweight matcher (see module docstring)."
-        )
 
     expected = fixture["expected"]
     if expected == "true_positive":

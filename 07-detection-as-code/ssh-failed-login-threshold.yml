@@ -6,19 +6,29 @@ description: >
   SSH authentication attempts against a single destination - a brute-force
   signature. Threshold (>5) chosen from observed baseline in MACCDC 2012
   capture, where legitimate hosts showed near-zero failures per pair.
+  Expressed as an `event_count` correlation over ssh-failed-login.yml's
+  base rule rather than an inline aggregated condition - the original
+  `condition: selection | count() by src_ip, dest_ip > 5` syntax this
+  rule used is a deprecated Sigma v1 pipe-aggregation form that pySigma
+  no longer parses (confirmed directly: `sigma check` rejected it with
+  "The pipe syntax in Sigma conditions has been deprecated and replaced
+  by Sigma correlations"). This UUID is unchanged from that version, so
+  ssh-bruteforce-then-success.yml's reference to it as the
+  failure-threshold component still resolves correctly.
 references:
   - https://github.com/sumitjha7727/splunk-log-analysis/tree/main/03-ssh-log-analysis
 author: Sumit Kant Jha
-date: 2026-08-28
-logsource:
-  category: application
-  product: zeek
-  service: ssh
-detection:
-  selection:
-    status: failure
-  timeframe: 1h
-  condition: selection | count() by src_ip, dest_ip > 5
+date: 2026-08-30
+correlation:
+  type: event_count
+  rules:
+    - 552fdfca-742d-4b1f-8054-dca173af8a00
+  group-by:
+    - src_ip
+    - dest_ip
+  timespan: 1h
+  condition:
+    gte: 5
 falsepositives:
   - Misconfigured automated jobs or monitoring tools retrying SSH connections
   - A legitimate user repeatedly mistyping credentials

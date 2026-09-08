@@ -15,19 +15,28 @@ description: >
   calibrated against what Splunk can actually see, not the true count
   - a real deployment would fix the ingestion line-breaking issue
   before trusting any count-based threshold on this sourcetype.
+  Expressed as an `event_count` correlation over dhcp-lease-event.yml's
+  base rule rather than an inline aggregated condition - the original
+  `condition: selection | count() by mac > 20` syntax this rule used is
+  a deprecated Sigma v1 pipe-aggregation form that pySigma no longer
+  parses (confirmed directly: `sigma check` rejected it with "The pipe
+  syntax in Sigma conditions has been deprecated and replaced by Sigma
+  correlations"). This UUID is unchanged from that version, so every
+  other reference to this rule (the Project 7 detections table,
+  savedsearches.conf, RUNBOOK.md) still points at the same detection.
 references:
   - https://github.com/sumitjha7727/splunk-log-analysis/tree/main/06-dhcp-log-analysis
 author: Sumit Kant Jha
-date: 2026-08-28
-logsource:
-  category: application
-  product: zeek
-  service: dhcp
-detection:
-  selection:
-    mac|exists: true
-  timeframe: 24h
-  condition: selection | count() by mac > 20
+date: 2026-08-30
+correlation:
+  type: event_count
+  rules:
+    - 7641470d-17e4-4617-a8ac-e5daf1c61c35
+  group-by:
+    - mac
+  timespan: 24h
+  condition:
+    gt: 20
 falsepositives:
   - A DHCP relay or gateway device that legitimately renews leases on behalf of many downstream clients
   - A single busy access point or NAT device generating high normal lease-renewal volume

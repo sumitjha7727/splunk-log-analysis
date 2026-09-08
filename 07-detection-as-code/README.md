@@ -16,21 +16,22 @@ Same Splunk Enterprise (Docker) instance and ingested data as Projects 1-6. Lice
 
 | # | Title | Source finding | ATT&CK | Files | Splunk alert |
 |---|---|---|---|---|---|
-| 1 | SSH Brute Force Followed by Success | Project 3, Query 3 | T1110, T1078 | `ssh-failed-login-threshold.yml`, `ssh-successful-login.yml`, `ssh-bruteforce-then-success.yml` | Scheduled, hourly, trigger: results > 0 |
+| 1 | SSH Brute Force Followed by Success | Project 3, Query 3 | T1110, T1078 | `ssh-failed-login.yml`, `ssh-failed-login-threshold.yml`, `ssh-successful-login.yml`, `ssh-bruteforce-then-success.yml` | Scheduled, hourly, trigger: results > 0 |
 | 2 | SMTP Nmap Scan Signature (HELO Fingerprint) | Project 5, Query 5 | T1595, T1046 | `nmap-scan-signature.yml` | Scheduled, hourly, trigger: results > 0 |
 | 3 | SMTP Nessus Scan Signature (HELO Fingerprint) | Project 5, Query 5 | T1595 | `nessus-scan-signature.yml` | Scheduled, hourly, trigger: results > 0 |
 | 4 | SMTP Command-Injection Probe in Envelope Fields | Project 5, Query 4 | T1190 | `smtp-injection-probe.yml` | Not configured - documented finding only (see below) |
-| 5 | DHCP Lease Pool Dominated by a Single Host | Project 6, Known limitations | - (deliberately untagged, see below) | `dhcp-lease-anomaly.yml` | Not configured - informational only (see below) |
-| 6 | DNS Tunneling via High-Cardinality Subdomains | Project 1, Findings | T1071.004, T1048.003 | `dns-tunneling-high-cardinality.yml` | Not configured - pending investigation results (see below) |
+| 5 | DHCP Lease Pool Dominated by a Single Host | Project 6, Known limitations | - (deliberately untagged, see below) | `dhcp-lease-event.yml`, `dhcp-lease-anomaly.yml` | Not configured - informational only (see below) |
+| 6 | DNS Tunneling via High-Cardinality Subdomains | Project 1, Findings | T1071.004, T1048.003 | `dns-query-event.yml`, `dns-tunneling-high-cardinality.yml` | Not configured - pending investigation results (see below) |
 
 ### 1. SSH Brute Force Followed by Success
 
 **Why this one:** Project 3's headline finding was two hosts breached after dozens of failed logins each from the same source - a textbook "the attacker got in" signature, and the clearest case in the whole portfolio for turning a hunt into a standing detection.
 
-**Sigma modeling:** expressed as three files rather than one, because the underlying pattern is a correlation across two conditions (a failure-count threshold, then a success), not a single-event match:
-- `ssh-failed-login-threshold.yml` - fires when one source/destination pair exceeds 5 failed logins in an hour.
+**Sigma modeling:** expressed as four files rather than one, because the underlying pattern is a correlation across two conditions (a failure-count threshold, then a success), not a single-event match:
+- `ssh-failed-login.yml` - the broad base event (any single failed login); not meaningful on its own, exists only as the thing the threshold rule below correlates.
+- `ssh-failed-login-threshold.yml` - a Sigma `event_count` correlation over the base rule above, firing when one source/destination pair exceeds 5 failed logins within an hour. (Originally written as a single-rule `condition: selection | count() by src_ip, dest_ip > 5` - that pipe-aggregation syntax is deprecated and pySigma rejects it outright, confirmed directly via `sigma check`; splitting into a base rule plus an `event_count` correlation is the corrected, native-Sigma equivalent.)
 - `ssh-successful-login.yml` - flags any successful login (broad by design; only meaningful combined with the rule above).
-- `ssh-bruteforce-then-success.yml` - the correlation rule, `type: temporal_ordered`, requiring the failure-threshold rule to fire before the success rule for the same `src_ip`/`dest_ip` pair within a 1-hour window.
+- `ssh-bruteforce-then-success.yml` - the correlation rule, `type: temporal_ordered`, requiring the failure-threshold correlation to fire before the success rule for the same `src_ip`/`dest_ip` pair within a 1-hour window. Verified directly that `sigma convert` cannot translate this one (`Correlation type 'temporal_ordered' is not supported by backend`) - a real, current pysigma-backend-splunk limitation, not a hypothetical one; see the CI workflow's own comment on this step.
 
 **SPL (what actually runs as the Splunk alert):**
 ```
@@ -106,7 +107,7 @@ index=main sourcetype="smtp_sample" earliest=0 (rcptto="*|*" OR rcptto="*;*" OR 
 
 **Why this one, and why it's different from the rest:** every other detection in this folder maps to a MITRE ATT&CK technique - this one deliberately doesn't. Project 6's headline finding (a single MAC address responsible for roughly half of all DHCP traffic in the capture) is the signature of a boot-looping or misconfigured device, not a mapped adversary technique. Forcing an ATT&CK tag onto an operational anomaly would misrepresent what this actually detects, so the Sigma rule is tagged `level: informational` with no `tags:` field at all.
 
-**Sigma modeling:** single-event match, counting by `mac` over a 24-hour window: `selection | count() by mac > 20`.
+**Sigma modeling:** expressed as two files, a broad base rule (`dhcp-lease-event.yml`, any event with a `mac` field) plus a Sigma `event_count` correlation (`dhcp-lease-anomaly.yml`) counting by `mac` over a 24-hour window, threshold `> 20`. Originally written as a single-rule `condition: selection | count() by mac > 20` - that pipe-aggregation syntax is deprecated and pySigma rejects it outright, confirmed directly via `sigma check`; the base-rule-plus-correlation split is the corrected, native-Sigma equivalent, same pattern used for the SSH threshold rule above.
 
 **SPL (translation, not yet scheduled):**
 ```
@@ -125,7 +126,7 @@ index=main sourcetype="dhcp_sample" earliest=0 | stats count by mac | where coun
 
 **Why this one, and why it's different from the rest:** every other detection in this folder was confirmed and promoted the same day it was found. This one is different on purpose - Project 1's original hunt flagged repeated long, base32/base64-looking subdomains from a single host (`192.168.204.71`) to a single domain (`auth.rssfeeds.com`) as a DNS-tunneling *lead*, explicitly not a confirmed finding, and left it there rather than overstating it. Projects 3, 5, and 6 each turned their headline finding straight into a detection; Project 1's never did, until now. The full pivot - six specific techniques, each with a query and a `RESULTS: <pending>` placeholder - lives in [`01-dns-log-analysis/investigation/INVESTIGATION.md`](../01-dns-log-analysis/investigation/INVESTIGATION.md), since a proper writeup didn't fit in a table row.
 
-**Sigma modeling:** thresholded on the unique-subdomain ratio per parent domain (native Sigma aggregation: `count(distinct(query)) by src_ip, parent_domain > 15` within a 1-hour window) combined, at the SPL-translation layer, with a mean-subdomain-length check - not on raw domain length alone, which is what Project 1's original ad-hoc query used and which over-fires on legitimately long subdomains from CDN edge nodes and reputation/AV services. Same "documented as the conceptual detection, hand-translated to SPL" pattern already used for the SSH correlation rule above, because a single native Sigma aggregation condition can't cleanly express two independent thresholds combined.
+**Sigma modeling:** expressed as two files, a broad base rule (`dns-query-event.yml`, any DNS A-record query) plus a Sigma `value_count` correlation (`dns-tunneling-high-cardinality.yml`) counting distinct `query` values per `src_ip` within a 1-hour window, threshold `>= 15`. Grouping further by parent domain, and the accompanying mean-subdomain-length check, aren't expressible as native Sigma fields (`parent_domain` only exists after an SPL `rex` extraction, not on the raw event), so both stay applied at the SPL-translation layer only - same "documented as the conceptual detection, hand-translated to SPL" pattern already used for the SSH correlation rule above. (An earlier version of this rule used a single-rule pipe-aggregation condition instead of a proper correlation; that syntax is deprecated and pySigma rejects it outright, confirmed directly via `sigma check` - the base-rule-plus-correlation split above is the corrected form.)
 
 **SPL (translation, not yet scheduled - and not yet validated against real query results):**
 ```

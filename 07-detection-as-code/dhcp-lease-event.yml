@@ -1,0 +1,28 @@
+title: DHCP Lease Event
+id: 7641470d-17e4-4617-a8ac-e5daf1c61c35
+status: experimental
+description: >
+  Detects a single DHCP lease/renewal event with a MAC address present.
+  Not suspicious on its own - deliberately broad, since this rule
+  exists only as the base event for dhcp-lease-anomaly.yml's
+  correlation (which applies the actual >20-per-24h-per-MAC threshold).
+  Split out as its own file when dhcp-lease-anomaly.yml was converted
+  from a deprecated pipe-aggregation condition (`selection | count() by
+  mac > 20`, no longer supported by pySigma) to a proper Sigma
+  `event_count` correlation rule, which requires a separate base rule
+  to correlate against rather than expressing the count inline.
+references:
+  - https://github.com/sumitjha7727/splunk-log-analysis/tree/main/06-dhcp-log-analysis
+author: Sumit Kant Jha
+date: 2026-08-30
+logsource:
+  category: application
+  product: zeek
+  service: dhcp
+detection:
+  selection:
+    mac|exists: true
+  condition: selection
+falsepositives:
+  - Any single legitimate DHCP lease/renewal event - intentionally broad, only meaningful in combination with dhcp-lease-anomaly.yml's correlation
+level: informational
