@@ -1,0 +1,87 @@
+﻿name: Convert Sigma rules to SPL (detection-lab)
+
+# Converts every rule in detections/ via pysigma-backend-splunk, same
+# tooling as the repo root's 07-detection-as-code CI (see that
+# workflow's own comments for the full story). Kept as its own
+# workflow (separate from validate.yml) per B1's scope, so a convert
+# failure and a lint failure show up as distinct CI checks.
+#
+# Steps are split into isolated file groups rather than one
+# `sigma convert` call over the whole directory - verified directly
+# that converting multiple correlation-rule/base-rule pairs together
+# in a single invocation can crash pysigma-backend-splunk with
+# "Conversion result not available" once enough files are combined,
+# even though every rule converts cleanly in isolation. Splitting into
+# small, verified-working groups sidesteps that backend fragility.
+
+on:
+  push:
+    paths:
+      - "detection-lab/detections/**"
+  pull_request:
+    paths:
+      - "detection-lab/detections/**"
+  workflow_dispatch:
+
+jobs:
+  convert:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install sigma-cli and the Splunk backend
+        run: pip install sigma-cli pysigma-backend-splunk
+
+      - name: sigma convert — plain (non-correlation) rules
+        run: |
+          mkdir -p /tmp/sigma-plain
+          cp detection-lab/detections/nmap-scan-signature.yml \
+             detection-lab/detections/nessus-scan-signature.yml \
+             detection-lab/detections/smtp-injection-probe.yml \
+             detection-lab/detections/ssh-successful-login.yml \
+             /tmp/sigma-plain/
+          sigma convert -t splunk --without-pipeline /tmp/sigma-plain/
+
+      - name: sigma convert — SSH failed-login threshold (event_count correlation)
+        run: |
+          mkdir -p /tmp/sigma-ssh-threshold
+          cp detection-lab/detections/ssh-failed-login.yml \
+             detection-lab/detections/ssh-failed-login-threshold.yml \
+             /tmp/sigma-ssh-threshold/
+          sigma convert -t splunk --without-pipeline /tmp/sigma-ssh-threshold/
+
+      - name: sigma convert — DHCP lease anomaly (event_count correlation)
+        run: |
+          mkdir -p /tmp/sigma-dhcp
+          cp detection-lab/detections/dhcp-lease-event.yml \
+             detection-lab/detections/dhcp-lease-anomaly.yml \
+             /tmp/sigma-dhcp/
+          sigma convert -t splunk --without-pipeline /tmp/sigma-dhcp/
+
+      - name: sigma convert — DNS tunneling (value_count correlation)
+        run: |
+          mkdir -p /tmp/sigma-dns
+          cp detection-lab/detections/dns-query-event.yml \
+             detection-lab/detections/dns-tunneling-high-cardinality.yml \
+             /tmp/sigma-dns/
+          sigma convert -t splunk --without-pipeline /tmp/sigma-dns/
+
+      - name: sigma convert — SSH brute-force-then-success (temporal_ordered, non-blocking)
+        # Verified directly: pysigma-backend-splunk raises "Correlation
+        # type 'temporal_ordered' is not supported by backend" for this
+        # rule - a real, current limitation. See
+        # 07-detection-as-code/README.md's SSH detection section and
+        # this repo's own validate.yml for the same note.
+        continue-on-error: true
+        run: |
+          mkdir -p /tmp/sigma-ssh-chain
+          cp detection-lab/detections/ssh-failed-login.yml \
+             detection-lab/detections/ssh-failed-login-threshold.yml \
+             detection-lab/detections/ssh-successful-login.yml \
+             detection-lab/detections/ssh-bruteforce-then-success.yml \
+             /tmp/sigma-ssh-chain/
+          sigma convert -t splunk --without-pipeline /tmp/sigma-ssh-chain/

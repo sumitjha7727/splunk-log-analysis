@@ -1,0 +1,33 @@
+﻿name: Fixture replay tests (detection-lab)
+
+# Runs tests/test_detections.py's lightweight local matcher against
+# whatever's in tests/fixtures/ — currently nothing (see
+# tests/fixtures/README.md: fixtures are populated only from real
+# Atomic Red Team campaign runs, never generated synthetically), so
+# this job is expected to report skips, not failures, until stage 4-5
+# of README.md's build order actually happens against a real lab.
+
+on:
+  push:
+    paths:
+      - "detection-lab/**"
+  pull_request:
+    paths:
+      - "detection-lab/**"
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install test dependencies
+        run: pip install pytest pyyaml
+
+      - name: Run fixture replay tests
+        run: pytest detection-lab/tests/test_detections.py -v

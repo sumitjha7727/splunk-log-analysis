@@ -1,0 +1,38 @@
+﻿name: Validate Sigma rules (detection-lab)
+
+# Lints every Sigma rule ported into detections/. Mirrors
+# 07-detection-as-code's own validate.yml at the repo root - kept as a
+# separate workflow here (rather than one shared job) per B1's scope,
+# since detection-lab's rule set is expected to diverge and grow past
+# the eight starting files as new detections are added (see the
+# 7-stage build order in README.md, stage 6).
+
+on:
+  push:
+    paths:
+      - "detection-lab/detections/**"
+  pull_request:
+    paths:
+      - "detection-lab/detections/**"
+  workflow_dispatch:
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install sigma-cli
+        run: pip install sigma-cli pysigma-backend-splunk
+
+      - name: sigma check — lint every rule for schema correctness
+        run: sigma check detection-lab/detections/
+        # If this step ever fails with a MITRE ATT&CK/D3FEND data
+        # download error rather than a real rule issue, add
+        # `-x attacktag -x d3_fendtag` here - those two validators
+        # fetch taxonomy data over the network and can be flaky
+        # independent of whether the rules themselves are valid.

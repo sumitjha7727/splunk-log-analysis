@@ -1,0 +1,104 @@
+﻿name: Validate Sigma rules
+
+# Lints and converts every Sigma rule in 07-detection-as-code/ on each
+# push, so a broken or non-convertible rule shows up in CI instead of
+# only being noticed the next time someone hand-runs sigma-cli
+# locally. New dependencies limited to sigma-cli and
+# pysigma-backend-splunk, per this repo's own scope constraints.
+#
+# The convert steps are split into isolated file groups rather than
+# one `sigma convert` call over the whole directory. This isn't
+# stylistic - converting multiple correlation-rule/base-rule pairs
+# together in a single invocation was verified (locally, with
+# sigma-cli 1.x / pysigma-backend-splunk installed fresh) to
+# intermittently crash with "Conversion result not available" once
+# enough files are combined, even though every rule converts cleanly
+# in isolation. Splitting into small, verified-working groups sidesteps
+# that backend fragility instead of hoping it doesn't reproduce in CI.
+
+on:
+  push:
+    paths:
+      - "07-detection-as-code/**"
+  pull_request:
+    paths:
+      - "07-detection-as-code/**"
+  workflow_dispatch:
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install sigma-cli and the Splunk backend
+        run: pip install sigma-cli pysigma-backend-splunk
+
+      - name: sigma check — lint every rule for schema correctness
+        run: sigma check 07-detection-as-code/
+        # If this step ever fails with a MITRE ATT&CK/D3FEND data
+        # download error rather than a real rule issue, add
+        # `-x attacktag -x d3_fendtag` here - those two validators
+        # fetch taxonomy data over the network and can be flaky
+        # independent of whether the rules themselves are valid.
+
+      - name: sigma convert — plain (non-correlation) rules
+        run: |
+          mkdir -p /tmp/sigma-plain
+          cp 07-detection-as-code/nmap-scan-signature.yml \
+             07-detection-as-code/nessus-scan-signature.yml \
+             07-detection-as-code/smtp-injection-probe.yml \
+             07-detection-as-code/ssh-successful-login.yml \
+             /tmp/sigma-plain/
+          sigma convert -t splunk --without-pipeline /tmp/sigma-plain/
+
+      - name: sigma convert — SSH failed-login threshold (event_count correlation)
+        run: |
+          mkdir -p /tmp/sigma-ssh-threshold
+          cp 07-detection-as-code/ssh-failed-login.yml \
+             07-detection-as-code/ssh-failed-login-threshold.yml \
+             /tmp/sigma-ssh-threshold/
+          sigma convert -t splunk --without-pipeline /tmp/sigma-ssh-threshold/
+
+      - name: sigma convert — DHCP lease anomaly (event_count correlation)
+        run: |
+          mkdir -p /tmp/sigma-dhcp
+          cp 07-detection-as-code/dhcp-lease-event.yml \
+             07-detection-as-code/dhcp-lease-anomaly.yml \
+             /tmp/sigma-dhcp/
+          sigma convert -t splunk --without-pipeline /tmp/sigma-dhcp/
+
+      - name: sigma convert — DNS tunneling (value_count correlation)
+        run: |
+          mkdir -p /tmp/sigma-dns
+          cp 07-detection-as-code/dns-query-event.yml \
+             07-detection-as-code/dns-tunneling-high-cardinality.yml \
+             /tmp/sigma-dns/
+          sigma convert -t splunk --without-pipeline /tmp/sigma-dns/
+
+      - name: sigma convert — SSH brute-force-then-success (temporal_ordered, non-blocking)
+        # ssh-bruteforce-then-success.yml is a `type: temporal_ordered`
+        # correlation rule correlating two other rules (one of which is
+        # itself now a correlation rule, after the event_count fix
+        # above). Verified directly: pysigma-backend-splunk raises
+        # "Correlation type 'temporal_ordered' is not supported by
+        # backend" for this rule - a real, current limitation, not a
+        # hypothetical one. The actual Splunk alert for this detection
+        # runs hand-written SPL directly instead (see
+        # splunk-app/default/savedsearches.conf). This step is allowed
+        # to fail without failing the workflow: pretending a known,
+        # verified limitation doesn't exist would be worse than
+        # letting this step go orange instead of green.
+        continue-on-error: true
+        run: |
+          mkdir -p /tmp/sigma-ssh-chain
+          cp 07-detection-as-code/ssh-failed-login.yml \
+             07-detection-as-code/ssh-failed-login-threshold.yml \
+             07-detection-as-code/ssh-successful-login.yml \
+             07-detection-as-code/ssh-bruteforce-then-success.yml \
+             /tmp/sigma-ssh-chain/
+          sigma convert -t splunk --without-pipeline /tmp/sigma-ssh-chain/
