@@ -1,4 +1,4 @@
-﻿name: Validate Sigma rules
+name: Validate Sigma rules
 
 # Lints and converts every Sigma rule in 07-detection-as-code/ on each
 # push, so a broken or non-convertible rule shows up in CI instead of
@@ -81,18 +81,6 @@ jobs:
           sigma convert -t splunk --without-pipeline /tmp/sigma-dns/
 
       - name: sigma convert — SSH brute-force-then-success (temporal_ordered, non-blocking)
-        # ssh-bruteforce-then-success.yml is a `type: temporal_ordered`
-        # correlation rule correlating two other rules (one of which is
-        # itself now a correlation rule, after the event_count fix
-        # above). Verified directly: pysigma-backend-splunk raises
-        # "Correlation type 'temporal_ordered' is not supported by
-        # backend" for this rule - a real, current limitation, not a
-        # hypothetical one. The actual Splunk alert for this detection
-        # runs hand-written SPL directly instead (see
-        # splunk-app/default/savedsearches.conf). This step is allowed
-        # to fail without failing the workflow: pretending a known,
-        # verified limitation doesn't exist would be worse than
-        # letting this step go orange instead of green.
         continue-on-error: true
         run: |
           mkdir -p /tmp/sigma-ssh-chain

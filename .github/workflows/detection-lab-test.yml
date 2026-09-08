@@ -1,11 +1,4 @@
-﻿name: Fixture replay tests (detection-lab)
-
-# Runs tests/test_detections.py's lightweight local matcher against
-# whatever's in tests/fixtures/ — currently nothing (see
-# tests/fixtures/README.md: fixtures are populated only from real
-# Atomic Red Team campaign runs, never generated synthetically), so
-# this job is expected to report skips, not failures, until stage 4-5
-# of README.md's build order actually happens against a real lab.
+name: Fixture replay tests (detection-lab)
 
 on:
   push:
