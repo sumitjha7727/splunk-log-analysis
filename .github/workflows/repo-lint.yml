@@ -1,0 +1,39 @@
+name: Repo lint
+
+# Encodes CLAUDE.md's standing rules (pinned index, relative alert windows,
+# config-as-code in splunk-app/) and the mistakes this repo has actually
+# made - a missing MAX_DAYS_AGO, INGEST_EVAL in the wrong file, the default
+# retention window deleting the dataset, a field list that drifted from the
+# real raw log - as checks that fail the build. Standard library only.
+
+on:
+  push:
+    paths:
+      - "splunk-app/**"
+      - "07-detection-as-code/**"
+      - "detection-lab/detections/**"
+      - "**/*.md"
+      - "tools/**"
+      - ".github/workflows/repo-lint.yml"
+  pull_request:
+    paths:
+      - "splunk-app/**"
+      - "07-detection-as-code/**"
+      - "detection-lab/detections/**"
+      - "**/*.md"
+      - "tools/**"
+      - ".github/workflows/repo-lint.yml"
+  workflow_dispatch:
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+
+      - name: Lint splunk-app config, SPL in docs, and Sigma rule hygiene
+        run: python tools/lint_repo.py

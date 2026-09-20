@@ -34,5 +34,5 @@ falsepositives:
   - A legitimate user repeatedly mistyping credentials
 level: medium
 tags:
-  - attack.credential_access
+  - attack.credential-access
   - attack.t1110

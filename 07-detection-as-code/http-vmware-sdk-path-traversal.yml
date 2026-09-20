@@ -1,0 +1,35 @@
+title: VMware ESX SDK Directory Traversal Probe
+id: 5e9326d6-67ce-4a58-93c0-f025f5a5bc4d
+status: experimental
+description: >
+  Detects HTTP requests to VMware's /sdk/ endpoint carrying
+  directory-traversal sequences that reach /etc/vmware/ - the pattern
+  associated with the publicly documented VMware ESX/ESXi/Server
+  directory-traversal flaw (CVE-2009-3733), which vulnerability
+  scanners check for. Confirmed in Project 8: 97 requests from 7 source
+  hosts against 31 targets - 95 sent by the Nmap Scripting Engine and 2
+  by Nikto, so these are scanner checks for a known flaw rather than a
+  bespoke exploit. Almost all were answered 400/403/404/500; two
+  returned 200 OK with a 90-byte body, both from 192.168.203.45 to
+  192.168.21.252 - the only two worth a manual look.
+references:
+  - https://github.com/sumitjha7727/splunk-log-analysis/tree/main/08-http-log-analysis
+author: Sumit Kant Jha
+date: 2026-09-18
+logsource:
+  category: application
+  product: zeek
+  service: http
+detection:
+  selection:
+    uri|contains|all:
+      - '/sdk/'
+      - '/../'
+      - 'vmware'
+  condition: selection
+falsepositives:
+  - An authorized vulnerability scan checking for this specific flaw
+level: high
+tags:
+  - attack.initial-access
+  - attack.t1190

@@ -80,6 +80,15 @@ jobs:
              /tmp/sigma-dns/
           sigma convert -t splunk --without-pipeline /tmp/sigma-dns/
 
+      - name: sigma convert — HTTP rules (Project 8, single-event rules)
+        run: |
+          mkdir -p /tmp/sigma-http
+          cp 07-detection-as-code/http-scanner-user-agent.yml \
+             07-detection-as-code/http-sqli-signature-tag.yml \
+             07-detection-as-code/http-vmware-sdk-path-traversal.yml \
+             /tmp/sigma-http/
+          sigma convert -t splunk --without-pipeline /tmp/sigma-http/
+
       - name: sigma convert — SSH brute-force-then-success (temporal_ordered, non-blocking)
         continue-on-error: true
         run: |

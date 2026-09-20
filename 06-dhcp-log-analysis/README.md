@@ -20,6 +20,19 @@ Splunk Enterprise (Docker). Sourcetype `dhcp_sample`.
 
 ## Known limitation — a severe line-breaking bug, caught and quantified against the raw file
 
+**Update (2026-09-18) — fixed at the source, and re-verified live.** The `LINE_BREAKER` fix this section says a real deployment would need is now in [`splunk-app/default/props.conf`](../splunk-app/default/props.conf), and `dhcp.log` was re-ingested through it. Splunk's own numbers now match the raw file on every row of the table below:
+
+| Metric | Splunk before the fix | Splunk after the fix (live, 2026-09-18) | Raw file |
+|---|---|---|---|
+| Total DHCP records | 333 | **1,502** | 1,502 |
+| Unique assigned IPs | 64 | **99** | 99 |
+| Unique MAC addresses | 57 | **87** | 87 |
+| Top MAC's request count | 41 (`08:11:96:8d:be:84`) | **744** (`00:26:9e:83:a2:30`) | 744 |
+| MACs with >1 assigned IP | 7 | **10** | 10 |
+| Lease-type split (0s / 86400s) | 131 / 202 | **1,136 / 366** | 1,136 / 366 |
+
+The original write-up below is left exactly as it was: the bug, how it was caught by cross-checking raw data instead of trusting a query, and the decision not to re-ingest *at the time* are the point. Its "I chose not to re-ingest" sentence describes the original run; the app-level fix supersedes it. Queries are now pinned to `index=main` (was `index=*`) and the field extraction is a tab-`DELIMS` list in `splunk-app/default/transforms.conf` rather than the regex shown below; the screenshots are as originally captured.
+
 **This is the most significant data-quality bug found across this entire project series.** The raw `dhcp.log` file has **1,502 lines** — every one a clean, uniformly-formatted 10-column tab-separated record with a leading Unix-epoch timestamp, confirmed directly (`wc -l`, tab-count check, and a leading-timestamp check all ran clean against the source file). But Splunk only indexed **333 events** from it — fewer than 1 in 4 of the real records.
 
 The raw Events view makes the cause visible directly: individual indexed "events" contain multiple real DHCP lines glued together — one event bundles 8 separate real lines, another 4, another 2, with the group size varying unpredictably. This is Splunk's default line-breaking failing to reliably recognize where each real event starts. The same root cause has been a "known limitation" on every project in this series (Splunk not auto-recognizing the epoch `ts` field as a real timestamp during upload) — but on every prior project that only meant `_time` was wrong. Here, because Splunk had no reliable timestamp anchor to detect "a new event starts here," it fell back to an inconsistent heuristic that merged some batches of consecutive lines into single events.
@@ -57,22 +70,22 @@ Fields extracted (10): `ts, uid, src_ip, src_port, dest_ip, dest_port, mac, assi
 
 **1. Most-assigned IPs** (baseline)
 ```
-index=* sourcetype="dhcp_sample" earliest=0 | stats count by assigned_ip | sort -count
+index=main sourcetype="dhcp_sample" earliest=0 latest=now | stats count by assigned_ip | sort -count
 ```
 
 **2. Top requesting MAC addresses**
 ```
-index=* sourcetype="dhcp_sample" earliest=0 | stats count by mac | sort -count
+index=main sourcetype="dhcp_sample" earliest=0 latest=now | stats count by mac | sort -count
 ```
 
 **3. MAC-to-IP consistency check** (one MAC taking multiple different assigned IPs)
 ```
-index=* sourcetype="dhcp_sample" earliest=0 | stats dc(assigned_ip) as unique_ips, values(assigned_ip) as ips by mac | where unique_ips > 1 | sort -unique_ips
+index=main sourcetype="dhcp_sample" earliest=0 latest=now | stats dc(assigned_ip) as unique_ips, values(assigned_ip) as ips by mac | where unique_ips > 1 | sort -unique_ips
 ```
 
 **4. Lease time breakdown**
 ```
-index=* sourcetype="dhcp_sample" earliest=0 | stats count by lease_time | sort -count
+index=main sourcetype="dhcp_sample" earliest=0 latest=now | stats count by lease_time | sort -count
 ```
 
 (A reverse IP→multiple-MACs query and a full session-detail table were also attempted, but the first hit a screenshot mix-up and the second was unreadable due to the merged-event garbling described above — both dropped rather than reported without real verification. The raw-file cross-check below covers the same ground more reliably.)

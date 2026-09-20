@@ -6,10 +6,10 @@ description: >
   failed-login rule is then followed by a successful login from the
   same pair, within the correlation window. This is the actual
   "attacker got in" signature - matches the brute-force-to-success
-  pattern found by hand in Project 3 (Query 3), where
-  192.168.204.45 -> 192.168.28.203 showed 95 failures then 1 success,
-  and 192.168.204.45 -> 192.168.21.253 showed 57 failures then 1
-  success.
+  pattern found in Project 3 (Query 3): 192.168.204.45 ->
+  192.168.28.203 logged 95 failures and 1 success (the success came
+  after 12 failures, at 2012-03-16 14:50:12), and 192.168.204.45 ->
+  192.168.21.253 logged 57 failures and 1 success (also after 12).
 references:
   - https://github.com/sumitjha7727/splunk-log-analysis/tree/main/03-ssh-log-analysis
 author: Sumit Kant Jha
@@ -28,7 +28,7 @@ falsepositives:
   - Automated retry logic in a monitoring or config-management tool that eventually authenticates successfully
 level: high
 tags:
-  - attack.credential_access
-  - attack.initial_access
+  - attack.credential-access
+  - attack.initial-access
   - attack.t1110
   - attack.t1078

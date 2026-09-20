@@ -1,0 +1,31 @@
+title: Zeek HTTP SQL Injection Signature Tag
+id: ac91f262-1c87-4a91-bac4-387d45347943
+status: experimental
+description: >
+  Detects HTTP requests that Zeek's own HTTP analyzer tagged
+  HTTP::URI_SQLI - SQL-injection patterns (for example UNION SELECT) in
+  the request URI. Confirmed in Project 8: 2,731 tagged requests from 9
+  source hosts against 32 targets. 221 of them received a 200 OK
+  response - not proof of a successful injection, but the shortlist
+  worth a manual look before the other 2,510. One source,
+  192.168.202.110, accounts for 2,140 of the 2,731 - the same host
+  fingerprinted as the Nessus scanner in Project 5.
+references:
+  - https://github.com/sumitjha7727/splunk-log-analysis/tree/main/08-http-log-analysis
+author: Sumit Kant Jha
+date: 2026-09-18
+logsource:
+  category: application
+  product: zeek
+  service: http
+detection:
+  selection:
+    tags|contains: 'HTTP::URI_SQLI'
+  condition: selection
+falsepositives:
+  - An authorized web-application scan or penetration test
+  - A legitimate URI that happens to contain SQL keywords (rare, but Zeek's signature is pattern-based)
+level: high
+tags:
+  - attack.initial-access
+  - attack.t1190

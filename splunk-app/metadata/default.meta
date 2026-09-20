@@ -1,0 +1,19 @@
+# default.meta — declares this app's knowledge objects (props.conf's
+# TIME_PREFIX/LINE_BREAKER/REPORT/FIELDALIAS stanzas, transforms.conf's
+# extractions) globally visible, not scoped to only this app's own
+# search context.
+#
+# Without this file, Splunk defaults a newly-created app's knowledge
+# objects to app-level sharing. Index-time settings (LINE_BREAKER,
+# TIME_PREFIX) still apply globally regardless — parsing has no
+# per-search "current app" concept — but search-time-only objects
+# (FIELDALIAS, REPORT, EXTRACT) do not: a search run from the default
+# "search" app simply can't see them, silently returning empty results
+# for any field the alias/extraction was supposed to produce, with no
+# error. Found during the 2026-09-18 RUNBOOK verification pass, when
+# FIELDALIAS-cim's `dest` field worked from this app's own namespace
+# but returned zero matches from the "search" app namespace every
+# REST API call actually runs searches in by default.
+[]
+access = read : [ * ], write : [ admin ]
+export = system

@@ -5,9 +5,10 @@ description: >
   Detects Nessus's vulnerability-scanner fingerprint HELO strings
   (mail.nessus.org or bare nessus) instead of a real mail client
   hostname. Confirmed in Project 5 (Query 5): unlike the Nmap sweep
-  pattern, this came from a single source (192.168.202.110) hitting a
-  smaller set of hosts repeatedly - a concentrated vulnerability-scan
-  pattern rather than a one-shot network sweep.
+  pattern, this came from two sources (192.168.202.110: 19 events against 9
+  hosts; 192.168.202.138: 2 events against 1 host) hitting a smaller
+  set of hosts repeatedly - a concentrated vulnerability-scan pattern
+  rather than a one-shot network sweep.
 references:
   - https://github.com/sumitjha7727/splunk-log-analysis/tree/main/05-smtp-log-analysis
 author: Sumit Kant Jha

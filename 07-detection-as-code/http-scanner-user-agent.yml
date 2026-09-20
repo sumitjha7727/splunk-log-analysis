@@ -1,0 +1,35 @@
+title: Web Vulnerability Scanner or Directory Brute-Forcer User-Agent
+id: 8210244b-a5d1-44d4-9c33-946c0223dee7
+status: experimental
+description: >
+  Detects HTTP requests whose User-Agent identifies a known web
+  vulnerability scanner or directory brute-forcer (DirBuster, Nikto,
+  Nmap Scripting Engine, Nessus) instead of a real browser. Confirmed
+  in Project 8: 1,315,522 matching requests from 16 source hosts.
+  DirBuster alone accounted for 1,289,185 of them from a single source
+  against a single target; Nikto (14,945 requests, 1 source), the Nmap
+  Scripting Engine (10,629 requests, 13 sources, 75 targets) and Nessus
+  (763 requests, 3 sources, 47 targets) made up the rest.
+references:
+  - https://github.com/sumitjha7727/splunk-log-analysis/tree/main/08-http-log-analysis
+author: Sumit Kant Jha
+date: 2026-09-18
+logsource:
+  category: application
+  product: zeek
+  service: http
+detection:
+  selection:
+    user_agent|contains:
+      - 'DirBuster'
+      - 'Nikto'
+      - 'Nmap Scripting Engine'
+      - 'Nessus'
+  condition: selection
+falsepositives:
+  - An authorized vulnerability-management scan or penetration test using these tools' default User-Agent strings
+  - A User-Agent is trivially easy to spoof, so the absence of a match does not mean the absence of scanning
+level: medium
+tags:
+  - attack.reconnaissance
+  - attack.t1595.002

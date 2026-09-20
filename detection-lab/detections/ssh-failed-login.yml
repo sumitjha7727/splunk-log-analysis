@@ -27,5 +27,5 @@ falsepositives:
   - Any single legitimate failed SSH login attempt - intentionally broad, only meaningful in combination with ssh-failed-login-threshold.yml's correlation
 level: low
 tags:
-  - attack.credential_access
+  - attack.credential-access
   - attack.t1110

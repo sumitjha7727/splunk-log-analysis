@@ -16,11 +16,13 @@ Splunk Enterprise (Docker). Sourcetype `ssh_sample` (confirmed correctly under S
 
 1. Extracted `ssh.log.gz` and uploaded `ssh.log` via **Settings → Add Data → Upload**.
 2. Set a custom source type via **Save As**: `ssh_sample` (this Splunk instance's "classic" Add Data wizard needs Save As to create a new custom sourcetype — the "Select Source Type" dropdown only picks existing ones).
-3. Verified 7,143 events landed with `index=* sourcetype="ssh_sample" earliest=0`.
+3. Verified 7,143 events landed with `index=main sourcetype="ssh_sample" earliest=0 latest=now`.
 
 ## Known limitation — `_time` is ingestion time, not event time
 
-Same issue quietly present since Project 1: Splunk didn't recognize the `ts` field (Unix epoch, e.g. `1331901011.840000`) as a timestamp automatically (flagged on the Set Source Type preview screen with `timestamp = none`), so `_time` reflects when the file was indexed rather than the real 2012 event time. `earliest=0` in every search works around this by including everything regardless of `_time`, but it means `_time`-based sorting/analysis isn't using the real event clock. In a production Splunk deployment this would be fixed with an explicit `TIME_FORMAT`/`TIME_PREFIX` in `props.conf` for the sourcetype — noting it here as a known gap in this lab setup rather than a fixed issue.
+**Resolved (2026-09-18):** `splunk-app/`'s `props.conf` now sets `TIME_PREFIX`/`TIME_FORMAT` for this sourcetype and the data was re-ingested, so `_time` is the real 2012 event time (2012-03-16 12:30:11 to 2012-03-17 20:56:33). Every query here was re-run live and its numbers reproduce exactly (7,143 events: 5,069 failure / 1,773 undetermined / 301 success). `earliest=0 latest=now` stays in the queries because it's the only way to reach 2012 data from a default time picker. Queries are now pinned to `index=main` (was `index=*`); screenshots below show the original form. The original write-up follows unchanged.
+
+Same issue quietly present since Project 1: Splunk didn't recognize the `ts` field (Unix epoch, e.g. `1331901011.840000`) as a timestamp automatically (flagged on the Set Source Type preview screen with `timestamp = none`), so `_time` reflects when the file was indexed rather than the real 2012 event time. `earliest=0 latest=now` in every search works around this by including everything regardless of `_time`, but it means `_time`-based sorting/analysis isn't using the real event clock. In a production Splunk deployment this would be fixed with an explicit `TIME_FORMAT`/`TIME_PREFIX` in `props.conf` for the sourcetype — noting it here as a known gap in this lab setup rather than a fixed issue.
 
 **Second, smaller limitation:** the field sidebar shows four extra generic fields Splunk auto-named `field12`–`field15` alongside the 11 fields named during extraction, plus `resp_size`. Checked several raw events directly (expanding an event's field table) and confirmed these are consistently empty (`-`) — the tab-delimited source data has a few trailing empty columns beyond what this dataset actually populates, not a broken extraction. All 11 named fields (`ts, uid, src_ip, src_port, dest_ip, dest_port, status, direction, client, server`) populate correctly and were used throughout; the empty trailing columns don't affect any of the queries below.
 
@@ -34,37 +36,37 @@ Fields extracted: `ts, uid, src_ip, src_port, dest_ip, dest_port, status, direct
 
 **1. Success vs. failure breakdown** (baseline)
 ```
-index=* sourcetype="ssh_sample" earliest=0 | stats count by status | sort -count
+index=main sourcetype="ssh_sample" earliest=0 latest=now | stats count by status | sort -count
 ```
 
 **2. Top sources by failed attempts** (brute-force candidates)
 ```
-index=* sourcetype="ssh_sample" earliest=0 status=failure | stats count by src_ip, dest_ip | sort -count | head 20
+index=main sourcetype="ssh_sample" earliest=0 latest=now status=failure | stats count by src_ip, dest_ip | sort -count | head 20
 ```
 
 **3. Brute-force → success pattern** (headline query — repeated failures followed by a success against the same host)
 ```
-index=* sourcetype="ssh_sample" earliest=0 | stats count(eval(status="failure")) as failures, count(eval(status="success")) as successes by src_ip, dest_ip | where failures > 5 AND successes > 0 | sort -failures
+index=main sourcetype="ssh_sample" earliest=0 latest=now | stats count(eval(status="failure")) as failures, count(eval(status="success")) as successes by src_ip, dest_ip | where failures > 5 AND successes > 0 | sort -failures
 ```
 
 **4. Client banner distribution** (a long tail of unusual/exotic client banners from one source can indicate a scanning tool rather than a real user)
 ```
-index=* sourcetype="ssh_sample" earliest=0 | stats count by client | sort -count
+index=main sourcetype="ssh_sample" earliest=0 latest=now | stats count by client | sort -count
 ```
 
 **5. Most-targeted destination hosts**
 ```
-index=* sourcetype="ssh_sample" earliest=0 | stats count by dest_ip | sort -count | head 10
+index=main sourcetype="ssh_sample" earliest=0 latest=now | stats count by dest_ip | sort -count | head 10
 ```
 
 **6. Direction breakdown** (INBOUND vs. OUTBOUND — unexpected outbound SSH from an internal host can mean it's compromised and reaching out)
 ```
-index=* sourcetype="ssh_sample" earliest=0 | stats count by direction | sort -count
+index=main sourcetype="ssh_sample" earliest=0 latest=now | stats count by direction | sort -count
 ```
 
 ## Findings
 
-- **Brute-force → success pattern (headline finding)** — Query 3 surfaced a source/destination pair with a textbook attacker-eventually-got-in signature: `192.168.204.45` racked up **95 failed logins** against `192.168.28.203` followed by exactly **1 success**, and the same source hit `192.168.21.253` with **57 failures** before **1 success**. Two separate hosts breached by the same source after dozens of failed attempts each is the clearest "the attacker got in" evidence in this dataset — both destination hosts and the `192.168.204.45` source would justify immediate credential rotation and isolation in a real response.
+- **Brute-force → success pattern (headline finding)** — Query 3 surfaced two source/destination pairs with an attacker-eventually-got-in signature: `192.168.204.45` logged **95 failed logins and 1 success** against `192.168.28.203`, and **57 failures and 1 success** against `192.168.21.253`. **Correction (2026-09-18):** the original wording said "95 failures *followed by* exactly 1 success" — Query 3 counts failures and successes per pair without regard to order, and ordering the events by time shows the success came after only **12 failures** in each case. On `192.168.28.203` those 12 are 2 Nmap host-key probe failures at 14:09, then 10 password failures at ~5–8 second intervals between 14:49:10 and 14:50:05, then the **success at 14:50:12 on 2012-03-16**; the remaining 83 failures came *after* the success (45 on `192.168.21.253`, where the success was at 15:02:13), and the ones immediately after carry the same `SSH-2.0-OpenSSH_5.0` client banner — the run kept going past the point of compromise instead of stopping at it. That is still the clearest "the attacker got in" evidence in this dataset — about ten quick failures then a success is consistent with a weak-credential guess, not a 95-attempt grind — and both destination hosts and the `192.168.204.45` source would justify immediate credential rotation and isolation in a real response.
 - **Massive single-source brute-force campaign against one host** — `192.168.202.141` alone generated **2,365** failed SSH attempts against `192.168.229.101` (Query 2), a number so far ahead of the next-highest source/destination pair (104) that it's an outlier by more than an order of magnitude. Query 5 confirms this: `192.168.229.101` received **2,444** total SSH events — meaning virtually every SSH event ever logged against that host was this one attacker's failed-login flood. Unlike the finding above, this pair never appears in the failures>5 AND successes>0 result, meaning the flood never resulted in a logged success — a brute-force run that was noisy but, as far as this log shows, unsuccessful.
 - **Active Nmap-based SSH scanning across the network** — Query 4 (client banner distribution) shows over **1,000 of the 7,143 total events (~14%)** carrying Nmap's SSH probe banners rather than a real SSH client: `SSH-2.0-Nmap-SSH2-Hostkey` (496), `SSH-1.5-Nmap-SSH1-Hostkey` (251), `SSH-1.5-NmapNSE_1.0` (249), and `SSH-2.0-Nmap-SSH2-Enum-Algos` (5). This is automated reconnaissance sweeping the network for open SSH services, distinct from (and likely preceding) the brute-force activity above.
 - **Non-standard client banners spoofing OpenSSH** — also in the Query 4 breakdown, `SSH-9.9-OpenSSH_5.0` (64 events) and `SSH-1.33-OpenSSH_5.0` (62 events) don't correspond to any real OpenSSH release — actual OpenSSH version numbers never reach 9.9 or 1.33. Banners like these are a common trait of scripted/custom brute-force tooling that fakes a plausible-looking client string rather than using a genuine SSH client.
@@ -75,15 +77,16 @@ index=* sourcetype="ssh_sample" earliest=0 | stats count by direction | sort -co
 
 Converted the headline brute-force → success finding (Query 3) into a saved Splunk alert so the pattern is flagged automatically instead of requiring a manual re-run.
 
-**SSH Brute Force Followed by Success**
+**SSH Brute Force Followed by Success** (current version, updated 2026-09-18 — full writeup in [`07-detection-as-code`](../07-detection-as-code/README.md), detection 1)
 ```
-index=* sourcetype="ssh_sample" earliest=0 | stats count(eval(status="failure")) as failures, count(eval(status="success")) as successes by src_ip, dest_ip | where failures > 5 AND successes > 0 | sort -failures
+index=main sourcetype="ssh_sample" earliest=-1h latest=now | sort 0 _time | streamstats count(eval(status="failure")) as fails_before by src_ip, dest_ip | where status="success" AND fails_before > 5 | stats max(fails_before) as failures_before_success, count as successes_after_failures, min(_time) as first_success by src_ip, dest_ip | eval first_success=strftime(first_success,"%Y-%m-%d %H:%M:%S") | sort - failures_before_success
 ```
-- **Trigger condition:** Number of Results is greater than 0 — the query's own `where failures > 5 AND successes > 0` clause already does the filtering, so any row returned means the pattern fired.
-- **Schedule:** Hourly. The underlying Sigma detection specifies a `timespan: 1h` correlation window (the failures and the eventual success must fall within the same hour); this implementation runs against the full dataset (`earliest=0`) rather than a rolling 1-hour window, because of the `_time`-is-ingestion-time limitation noted above — an approximation of the Sigma rule's intent rather than an exact match, worth calling out explicitly.
+- **Trigger condition:** Number of Results is greater than 0 — the `where` clause already does the filtering, so any row returned means the pattern fired. Suppressed per `src_ip,dest_ip` for 24 hours so one incident alerts once, not every hour.
+- **Schedule:** Hourly, over `earliest=-1h latest=now` — which matches the Sigma detection's `timespan: 1h` correlation window. (The version originally written for this project ran `earliest=0`, because `_time` was ingestion time and no relative window could work; that limitation is resolved — see above.)
 - **Trigger actions:** Add to Triggered Alerts only — no email action configured, since there's no outbound mail set up on this lab instance.
 - **Permissions:** Private.
-- **What it catches:** The same signature as the headline finding above — a source IP racking up more than 5 failed logins against a destination host followed by at least one success. In this dataset it fired on `192.168.204.45 → 192.168.28.203` (95 failures, 1 success) and `192.168.204.45 → 192.168.21.253` (57 failures, 1 success).
+- **What changed from the original, and why:** the original alert counted failures and successes per pair *independently*, so it could not tell whether a success came before or after the failures — it matched 18 pairs on this data. This version uses `streamstats` to count only the failures that occurred *before* each success, matching the Sigma rule's `temporal_ordered` intent: **11 pairs** over the full capture, including both headline pairs below.
+- **Validated on the static capture:** run with `earliest=0 latest=now`, it returns those 11 pairs (the two headline pairs — `192.168.204.45 → 192.168.28.203` and `→ 192.168.21.253` — each with 12 failures before their success, at 2012-03-16 14:50:12 and 15:02:13). Run in its real hourly window it returns **0 rows**: this capture is 2012 data, so the scheduled alert cannot fire on it. That is expected and by design — what's validated here is the detection *logic*; a live feed is what would exercise the schedule.
 
 ## Screenshots
 

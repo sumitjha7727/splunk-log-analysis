@@ -4,10 +4,10 @@ status: experimental
 description: >
   Detects Nmap's SMTP script announcing itself via a scanner-specific
   HELO string (nmap.scanme.org) instead of a real mail client hostname.
-  Confirmed in Project 5 (Query 5): fired from three separate internal
-  hosts, each touching a different destination once - consistent with
-  a broad network-wide service sweep rather than a targeted mail
-  client.
+  Confirmed in Project 5 (Query 5): fired from seven separate internal
+  hosts - 30 events across 28 source/destination pairs, almost every
+  pair touched once - consistent with a broad network-wide service
+  sweep rather than a targeted mail client.
 references:
   - https://github.com/sumitjha7727/splunk-log-analysis/tree/main/05-smtp-log-analysis
 author: Sumit Kant Jha

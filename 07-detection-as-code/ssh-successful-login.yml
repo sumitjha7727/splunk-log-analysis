@@ -23,5 +23,5 @@ falsepositives:
   - Any legitimate successful SSH login - intentionally broad, this rule is only meaningful in combination with the correlation rule
 level: low
 tags:
-  - attack.initial_access
+  - attack.initial-access
   - attack.t1078

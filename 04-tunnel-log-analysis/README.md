@@ -25,6 +25,8 @@ Result: 8 real tunnel events — 3 Teredo tunnel setups (open + close each) from
 
 ## Known limitation — a self-inflicted data quality bug, and what it broke
 
+**Resolved (2026-09-18):** the fixes this section says a real deployment would need are now in [`splunk-app/`](../splunk-app) — an anchored `LINE_BREAKER`, `#`-prefixed Zeek header/footer lines routed to `nullQueue` at index time, and explicit timestamp settings — and the file was re-ingested clean. Result: **8 events for 8 real records** (no header artifact, no corrupted `action`), and **Query 6 now returns both never-closed tunnels directly**, where it originally returned only one. Two more things the clean data shows: the events carry their real capture times (the Teredo and 6to4 events are **2008-05-16, 15:50–15:59 UTC**; the 6in4 event is **2012-03-05, 17:47 UTC** — these are Wireshark sample captures, not MACCDC), and this file is what exposed a second timestamp limit — Splunk measures `MAX_DAYS_AGO` from the *file's modification time*, and this locally generated `tunnel.log` is the one raw file with a recent one (see [`splunk-app/default/README.md`](../splunk-app/default/README.md), "Known gotchas"). The original write-up follows unchanged, because the bug and how it was caught are the point.
+
 **Bug #2 — Splunk's default line-breaking swallowed my file's header, and glued its footer onto real data.** My merged `tunnel.log` included the standard Zeek header block (`#separator`, `#fields`, `#types`, etc.) and a trailing `#close` line, same as a normal Zeek-produced file. Splunk's default behavior is to treat any line that doesn't start with a recognizable timestamp as a *continuation* of the previous event rather than a new one. Since none of the 8 header lines have a timestamp, Splunk merged all of them into a single bogus event at ingest time — and merged the trailing `#close` line onto the *last* real data row instead of treating it separately. Net result: **9 indexed events for 8 real tunnel records**, and one real row's `action` field silently corrupted from `Tunnel::DISCOVER` to `Tunnel::DISCOVER\n#close`.
 
 I caught this from the event count (9 instead of the expected 8) and rebuilt a header-free version of the file, but chose to keep working with the already-ingested data rather than delete and re-upload. That decision had a real consequence, caught by comparing query output against the raw event table rather than trusting the query alone:
@@ -43,45 +45,47 @@ Fields extracted: `ts, uid, src_ip, src_port, dest_ip, dest_port, tunnel_type, a
 
 **1. Tunnel type breakdown** (baseline)
 ```
-index=* sourcetype="tunnel_sample" earliest=0 | stats count by tunnel_type | sort -count
+index=main sourcetype="tunnel_sample" earliest=0 latest=now | stats count by tunnel_type | sort -count
 ```
 
 **2. Action breakdown** (DISCOVER vs. CLOSE)
 ```
-index=* sourcetype="tunnel_sample" earliest=0 | stats count by action | sort -count
+index=main sourcetype="tunnel_sample" earliest=0 latest=now | stats count by action | sort -count
 ```
 
 **3. Full tunnel session detail**
 ```
-index=* sourcetype="tunnel_sample" earliest=0 tunnel_type=* | table _time uid src_ip src_port dest_ip dest_port tunnel_type action | sort _time
+index=main sourcetype="tunnel_sample" earliest=0 latest=now tunnel_type=* | table _time uid src_ip src_port dest_ip dest_port tunnel_type action | sort _time
 ```
 
 **4. Most-contacted tunnel endpoints**
 ```
-index=* sourcetype="tunnel_sample" earliest=0 tunnel_type=* | stats count by dest_ip | sort -count
+index=main sourcetype="tunnel_sample" earliest=0 latest=now tunnel_type=* | stats count by dest_ip | sort -count
 ```
 
 **5. Tunnel-initiating source hosts**
 ```
-index=* sourcetype="tunnel_sample" earliest=0 tunnel_type=* | stats dc(dest_ip) as unique_endpoints, values(tunnel_type) as types by src_ip | sort -unique_endpoints
+index=main sourcetype="tunnel_sample" earliest=0 latest=now tunnel_type=* | stats dc(dest_ip) as unique_endpoints, values(tunnel_type) as types by src_ip | sort -unique_endpoints
 ```
 
 **6. Tunnels that never closed** (headline query)
 ```
-index=* sourcetype="tunnel_sample" earliest=0 tunnel_type=* | stats count(eval(action="Tunnel::DISCOVER")) as opens, count(eval(action="Tunnel::CLOSE")) as closes by uid, src_ip, dest_ip, tunnel_type | where opens > closes
+index=main sourcetype="tunnel_sample" earliest=0 latest=now tunnel_type=* | stats count(eval(action="Tunnel::DISCOVER")) as opens, count(eval(action="Tunnel::CLOSE")) as closes by uid, src_ip, dest_ip, tunnel_type | where opens > closes
 ```
 
 Note: the `tunnel_type=*` filter I added to queries 3–6 to exclude the header artifact turned out not to fully work — the artifact event's `tunnel_type` field extracted a non-empty (but garbage) value of literally `ts`, so it still passed the filter and shows up as a distorted row in several of the results (visible in the screenshots). It's easy to spot — garbled field values with fragments like `#unset_field` or `#open` instead of real IPs/tunnel types — and doesn't affect the real 8-row findings below.
 
 ## Findings
 
-- **Two IP-in-IP tunnels opened and never closed (headline finding)** — `70.55.213.211 → 192.88.99.1` and `213.141.154.170 → 213.79.83.1` (both `Tunnel::IP`) each show exactly one `DISCOVER` event and no corresponding `CLOSE`. This is expected Zeek behavior for plain IP-in-IP tunnels (they don't get an explicit close event the way Teredo does), not necessarily malicious — but it's exactly the kind of tunnel a SOC hunt should surface for manual review, since IP-in-IP encapsulation is a known technique for smuggling traffic past IPv4-focused firewalls and DLP tooling. Only the first of these two was actually caught by Query 6 as run — the second only surfaced by manually reviewing the full 9-row event table, because of the data-quality bug described above. Both are reported here since both are real.
+- **Two IP-in-IP tunnels opened and never closed (headline finding)** — `70.55.213.211 → 192.88.99.1` and `213.141.154.170 → 213.79.83.1` (both `Tunnel::IP`) each show exactly one `DISCOVER` event and no corresponding `CLOSE`. This is expected Zeek behavior for plain IP-in-IP tunnels (they don't get an explicit close event the way Teredo does), not necessarily malicious — but it's exactly the kind of tunnel a SOC hunt should surface for manual review, since IP-in-IP encapsulation is a known technique for smuggling traffic past IPv4-focused firewalls and DLP tooling. Only the first of these two was actually caught by Query 6 as run — the second only surfaced by manually reviewing the full 9-row event table, because of the data-quality bug described above. Both are reported here since both are real. *(Re-verified 2026-09-18 on the clean re-ingest: Query 6 returns both directly — see the Known limitation update above.)*
 - **One of the two tunnels touches known infrastructure, not an unknown host** — `192.88.99.1` is the IANA-assigned global anycast address for public 6to4 relays, used for legitimate automatic IPv6-over-IPv4 tunneling. Worth recognizing on sight so it isn't mistaken for a suspicious unknown IP during triage — but 6to4 traffic is still worth tracking, since it's a well-documented way to carry IPv6 traffic through networks that only inspect or filter IPv4.
 - **The second tunnel has no such recognizable public-infrastructure destination** — `213.79.83.1` doesn't correspond to any well-known relay address the way `192.88.99.1` does, which makes this the more interesting of the two to actually pull a full packet capture on in a real investigation.
 - **Teredo tunneling from a single internal host is otherwise clean baseline activity** — `192.168.2.16` opened and cleanly closed three separate Teredo tunnels to three different Teredo relay/server IPs (`65.55.158.80`, `65.55.158.81`, `83.170.1.38`), all on source port 3797 (Teredo's standard client behavior). Every one of these has a matching `DISCOVER` and `CLOSE` pair — normal NAT-traversal tunnel setup/teardown, useful as a contrast baseline against the two tunnels above that never closed.
-- **Overall breakdown** — of the 8 real events: 6 `Tunnel::TEREDO` (all from the one host above) and 2 `Tunnel::IP` (the two never-closed tunnels). 5 `DISCOVER` actions total, 3 `CLOSE` actions total (one `DISCOVER` value corrupted by the header-merge bug, as noted above).
+- **Overall breakdown** — of the 8 real events: 6 `Tunnel::TEREDO` (all from the one host above) and 2 `Tunnel::IP` (the two never-closed tunnels). 5 `DISCOVER` actions total, 3 `CLOSE` actions total (in the original run one `DISCOVER` value was corrupted by the header-merge bug; on the clean re-ingest all eight are intact).
 
 ## Screenshots
+
+*Captured before the 2026-09-18 clean re-ingest: they show the original 9-event data including the header artifact, and the original `index=*` query form.*
 
 - `screenshot-1787679013953.png` — raw Events view of all 9 indexed events (Time range: All time), showing the header-artifact event (bottom) alongside the 8 real tunnel rows
 - `sssssss.png` — `index=* sourcetype="tunnel_sample" earliest=0 | table _raw`, showing the raw text of all 9 events including the merged header block and the corrupted `#close`-appended row
